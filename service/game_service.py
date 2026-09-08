@@ -19,48 +19,64 @@ class Game2048Service:
         dto.board[row][col] = 4 if random.random() < 0.1 else 2
 
     @staticmethod
-    def _merge_one_row(row: List[int]) -> List[int]:
-        """单行向左合并逻辑"""
-        # 去掉0
+    def _merge_one_row(row: List[int]) -> Tuple[List[int], int]:
+        """
+        单行向左合并
+        :param row: 原始行数组
+        :return: (合并之后的新行, 本次合并获得的分数)
+        """
         nums = [v for v in row if v != 0]
+        add_score = 0
         for i in range(len(nums) - 1):
             if nums[i] == nums[i + 1]:
-                nums[i] *= 2
+                merge_val = nums[i] * 2
+                nums[i] = merge_val
                 nums[i + 1] = 0
+                add_score += merge_val // 4  # 合并得到的值计入分数
+
         nums = [v for v in nums if v != 0]
-        # 补0到长度4
         while len(nums) < 4:
             nums.append(0)
-        return nums
+        return nums, add_score
 
     @staticmethod
     def move_left(dto: GameBoardDTO) -> bool:
         """向左移动，返回棋盘是否发生变化"""
         old_board = [r.copy() for r in dto.board]
+        total_add = 0
         for idx in range(4):
-            dto.board[idx] = Game2048Service._merge_one_row(dto.board[idx])
+            new_row, score = Game2048Service._merge_one_row(dto.board[idx])
+            dto.board[idx] = new_row
+            total_add += score
+        dto.score += total_add
         return old_board != dto.board
 
     @staticmethod
     def move_right(dto: GameBoardDTO) -> bool:
         """向右移动"""
         old_board = [r.copy() for r in dto.board]
+        total_add = 0
         for idx in range(4):
             reversed_row = dto.board[idx][::-1]
-            merged = Game2048Service._merge_one_row(reversed_row)
+            merged, score = Game2048Service._merge_one_row(reversed_row)
             dto.board[idx] = merged[::-1]
+            total_add += score
+        dto.score += total_add
         return old_board != dto.board
 
     @staticmethod
     def move_up(dto: GameBoardDTO) -> bool:
         """向上移动"""
         old_board = [r.copy() for r in dto.board]
-        # 转置矩阵
         transpose = list(zip(*dto.board))
         transpose = [list(item) for item in transpose]
+        total_add = 0
         for i in range(4):
-            transpose[i] = Game2048Service._merge_one_row(transpose[i])
+            new_row, score = Game2048Service._merge_one_row(transpose[i])
+            transpose[i] = new_row
+            total_add += score
         dto.board = [list(x) for x in zip(*transpose)]
+        dto.score += total_add
         return old_board != dto.board
 
     @staticmethod
@@ -69,11 +85,14 @@ class Game2048Service:
         old_board = [r.copy() for r in dto.board]
         transpose = list(zip(*dto.board))
         transpose = [list(item) for item in transpose]
+        total_add = 0
         for i in range(4):
             rev = transpose[i][::-1]
-            merged = Game2048Service._merge_one_row(rev)
+            merged, score = Game2048Service._merge_one_row(rev)
             transpose[i] = merged[::-1]
+            total_add += score
         dto.board = [list(x) for x in zip(*transpose)]
+        dto.score += total_add
         return old_board != dto.board
 
     @staticmethod
