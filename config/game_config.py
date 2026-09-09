@@ -22,5 +22,25 @@ COLOR_MAP = {
     512: "#edc850",
     1024: "#edc53f",
     2048: "#edc22e",
+    4096: "#3c3a32",
 }
 DEFAULT_COLOR = "#3c3a32"
+
+# 难度配置
+DIFFICULTY_CONFIG = {
+    "easy": {
+        "name": "简易",
+        "prob_4": 0.05,      # 生成4的概率5%，95%生成2
+        "win_target": 1024  # 合成1024即胜利
+    },
+    "normal": {
+        "name": "普通",
+        "prob_4": 0.1,
+        "win_target": 2048
+    },
+    "hard": {
+        "name": "困难",
+        "prob_4": 0.25,     # 25%概率出4，更难玩
+        "win_target": 4096
+    }
+}

@@ -2,12 +2,13 @@ import random
 from typing import List, Tuple
 from dto.game_board_dto import GameBoardDTO
 from service.game_exception import InvalidMoveException, BoardFullException
+from config.game_config import DIFFICULTY_CONFIG
 
 
 class Game2048Service:
     @staticmethod
     def add_random_number(dto: GameBoardDTO):
-        """在空白位置随机生成2或4，2概率90%，4概率10%"""
+        """根据当前难度，在空白位置随机生成2或4"""
         empty_positions: List[Tuple[int, int]] = []
         for i in range(4):
             for j in range(4):
@@ -15,8 +16,11 @@ class Game2048Service:
                     empty_positions.append((i, j))
         if not empty_positions:
             raise BoardFullException("棋盘已满，无法生成新方块")
+
+        # 读取当前难度的4生成概率
+        prob_4 = DIFFICULTY_CONFIG[dto.difficulty]["prob_4"]
         row, col = random.choice(empty_positions)
-        dto.board[row][col] = 4 if random.random() < 0.1 else 2
+        dto.board[row][col] = 4 if random.random() < prob_4 else 2
 
     @staticmethod
     def _merge_one_row(row: List[int]) -> Tuple[List[int], int]:
@@ -32,7 +36,7 @@ class Game2048Service:
                 merge_val = nums[i] * 2
                 nums[i] = merge_val
                 nums[i + 1] = 0
-                add_score += merge_val // 4  # 合并得到的值计入分数
+                add_score += merge_val // 4
 
         nums = [v for v in nums if v != 0]
         while len(nums) < 4:
@@ -41,7 +45,6 @@ class Game2048Service:
 
     @staticmethod
     def move_left(dto: GameBoardDTO) -> bool:
-        """向左移动，返回棋盘是否发生变化"""
         old_board = [r.copy() for r in dto.board]
         total_add = 0
         for idx in range(4):
@@ -53,7 +56,6 @@ class Game2048Service:
 
     @staticmethod
     def move_right(dto: GameBoardDTO) -> bool:
-        """向右移动"""
         old_board = [r.copy() for r in dto.board]
         total_add = 0
         for idx in range(4):
@@ -66,7 +68,6 @@ class Game2048Service:
 
     @staticmethod
     def move_up(dto: GameBoardDTO) -> bool:
-        """向上移动"""
         old_board = [r.copy() for r in dto.board]
         transpose = list(zip(*dto.board))
         transpose = [list(item) for item in transpose]
@@ -81,7 +82,6 @@ class Game2048Service:
 
     @staticmethod
     def move_down(dto: GameBoardDTO) -> bool:
-        """向下移动"""
         old_board = [r.copy() for r in dto.board]
         transpose = list(zip(*dto.board))
         transpose = [list(item) for item in transpose]
@@ -97,12 +97,6 @@ class Game2048Service:
 
     @staticmethod
     def move(dto: GameBoardDTO, direction: str) -> bool:
-        """
-        对外统一移动入口
-        :param dto: GameBoardDTO
-        :param direction: left/right/up/down
-        :return: 是否发生移动
-        """
         direction_map = {
             "left": Game2048Service.move_left,
             "right": Game2048Service.move_right,
@@ -115,10 +109,11 @@ class Game2048Service:
 
     @staticmethod
     def check_game_status(dto: GameBoardDTO):
-        """检查胜利/失败状态"""
-        # 判断胜利：出现2048
+        """检查胜利/失败状态，根据难度判断胜利目标"""
+        win_target = DIFFICULTY_CONFIG[dto.difficulty]["win_target"]
+        # 判断胜利：达到目标值
         for row in dto.board:
-            if 2048 in row:
+            if win_target in row:
                 dto.is_win = True
 
         # 存在空格，游戏继续
