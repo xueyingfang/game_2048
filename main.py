@@ -5,6 +5,7 @@ from dto.game_board_dto import GameBoardDTO
 from service.game_service import Game2048Service
 from service.game_exception import InvalidMoveException, BoardFullException
 from config.game_config import *
+from utils.save_util import save_game, load_game, clear_save
 
 
 class GameMainWindow:
@@ -12,7 +13,7 @@ class GameMainWindow:
         self.root = root
         self.root.title("Python 2048游戏")
         self.root.resizable(False, False)
-        self.game_dto = GameBoardDTO()
+        self.game_dto: GameBoardDTO = None
 
         # 难度中文映射
         self.diff_map = {
@@ -20,19 +21,18 @@ class GameMainWindow:
             "普通": "normal",
             "困难": "hard"
         }
-        # 保存上次选择的难度，重开复用
         self.last_selected_diff_key = "normal"
 
-        # 先启动难度选择弹窗
+        # 启动，弹出难度选择窗口
         self.show_diff_select_window()
 
     def show_diff_select_window(self):
-        """启动游戏：难度选择弹窗，选完才创建游戏界面"""
-        # 弹窗顶层窗口
+        """启动模态难度选择弹窗"""
         diff_win = tk.Toplevel(self.root)
         diff_win.title("选择游戏难度")
         diff_win.geometry("320x160")
-        diff_win.grab_set()  # 模态窗口，必须关闭才能操作主窗口
+        diff_win.grab_set()
+        self.root.withdraw()
 
         tk.Label(diff_win, text="请选择游戏难度", font=("Arial", 16)).pack(pady=15)
         diff_var = tk.StringVar(value="普通")
@@ -43,27 +43,38 @@ class GameMainWindow:
         def confirm_diff():
             selected_cn = diff_var.get()
             self.last_selected_diff_key = self.diff_map[selected_cn]
-            self.game_dto.difficulty = self.last_selected_diff_key
             diff_win.destroy()
-            # 关闭弹窗后，初始化游戏画布界面
+            self.init_game_by_diff()
             self.init_game_ui()
 
         tk.Button(diff_win, text="确认开始游戏", command=confirm_diff, font=("Arial",12)).pack(pady=15)
-        # 禁止直接关闭主窗口，必须选难度
-        self.root.withdraw()
+
+    def init_game_by_diff(self):
+        """
+        根据选中难度加载游戏
+        如果存档存在，并且存档的难度 == 当前选择难度：读取存档
+        否则：新建一局，清除旧存档
+        """
+        saved_dto = load_game()
+        if saved_dto is not None and saved_dto.difficulty == self.last_selected_diff_key:
+            self.game_dto = saved_dto
+        else:
+            # 存档不存在 / 存档难度不一致，新开一局
+            self.game_dto = GameBoardDTO()
+            self.game_dto.difficulty = self.last_selected_diff_key
+            Game2048Service.init_new_game(self.game_dto)
+            save_game(self.game_dto)
 
     def init_game_ui(self):
-        """初始化游戏棋盘UI，在选择难度之后执行"""
         self.root.deiconify()
         target = DIFFICULTY_CONFIG[self.last_selected_diff_key]["win_target"]
         self.root.title(f"Python 2048游戏 | 当前难度：{self.last_selected_diff_key} 目标:{target}")
         self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT + 40}")
 
-        # 顶部信息标签
         self.info_label = tk.Label(self.root, text=f"分数：{self.game_dto.score}", font=("Arial", 16))
         self.info_label.pack(pady=3)
 
-        # 按钮容器：重开一局 / 暂停 / 退出
+        # 按钮：重开一局 / 暂停 / 退出游戏（删掉返回难度按钮）
         btn_frame = tk.Frame(self.root)
         btn_frame.pack(pady=2)
 
@@ -79,18 +90,15 @@ class GameMainWindow:
         self.canvas = tk.Canvas(self.root, width=WINDOW_WIDTH, height=WINDOW_HEIGHT - 80, bg="#bbada0")
         self.canvas.pack()
 
-        # 绑定方向按键
+        # 键盘方向键绑定
         self.root.bind("<Left>", self.on_key_press)
         self.root.bind("<Right>", self.on_key_press)
         self.root.bind("<Up>", self.on_key_press)
         self.root.bind("<Down>", self.on_key_press)
 
-        # 初始化游戏数据
-        Game2048Service.init_new_game(self.game_dto)
         self.draw_board()
 
     def draw_board(self):
-        """绘制棋盘"""
         self.canvas.delete("all")
         for row in range(BOARD_SIZE):
             for col in range(BOARD_SIZE):
@@ -118,7 +126,6 @@ class GameMainWindow:
             self.canvas.create_rectangle(0,0,WINDOW_WIDTH, WINDOW_HEIGHT, fill="#000000", stipple="gray50")
             self.canvas.create_text(WINDOW_WIDTH//2, (WINDOW_HEIGHT-80)//2, text="游戏已暂停", font=("Arial",30,"bold"), fill="white")
 
-        # 胜利/失败弹窗
         if self.game_dto.is_win:
             target_val = DIFFICULTY_CONFIG[self.game_dto.difficulty]["win_target"]
             messagebox.showinfo("恭喜！", f"你合成{target_val}，游戏胜利！")
@@ -126,31 +133,35 @@ class GameMainWindow:
             messagebox.showwarning("游戏结束", "棋盘已满，没有可合并方块，游戏结束！")
 
     def toggle_pause(self):
-        """暂停/继续"""
+        """修复暂停功能"""
         self.game_dto.is_paused = not self.game_dto.is_paused
         if self.game_dto.is_paused:
             self.btn_pause.config(text="继续游戏")
         else:
             self.btn_pause.config(text="暂停")
+        save_game(self.game_dto)
         self.draw_board()
 
     def restart_game(self):
-        """重开一局：复用上次选择的难度，不再弹出难度选择"""
+        """重开一局，清除存档，沿用当前难度"""
         answer = messagebox.askyesno("确认重开", "确定放弃当前对局，重新开始吗？")
         if answer:
-            # 保持难度不变，只重置棋盘、分数、状态
+            clear_save()
+            self.game_dto = GameBoardDTO()
+            self.game_dto.difficulty = self.last_selected_diff_key
             Game2048Service.init_new_game(self.game_dto)
+            save_game(self.game_dto)
             self.btn_pause.config(text="暂停")
             self.draw_board()
 
     def exit_game(self):
-        """退出游戏"""
-        answer = messagebox.askyesno("退出确认", "确定要退出游戏吗？")
+        """退出前自动保存对局"""
+        answer = messagebox.askyesno("退出确认", "确定要退出游戏吗？当前对局会自动保存。")
         if answer:
+            save_game(self.game_dto)
             self.root.destroy()
 
     def on_key_press(self, event):
-        """键盘事件"""
         try:
             key_map = {
                 "Left": "left",
@@ -162,12 +173,15 @@ class GameMainWindow:
             if not direction:
                 return
 
-            if self.game_dto.is_paused or self.game_dto.is_game_over or self.game_dto.is_win:
+            # 暂停 / 胜利 / 游戏结束，禁止移动
+            if self.game_dto.is_paused or self.game_dto.is_win or self.game_dto.is_game_over:
                 return
 
             moved = Game2048Service.move(self.game_dto, direction)
             if moved:
                 Game2048Service.add_random_number(self.game_dto)
+                # 移动成功自动保存
+                save_game(self.game_dto)
             Game2048Service.check_game_status(self.game_dto)
             self.draw_board()
 
