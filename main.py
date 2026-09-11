@@ -15,19 +15,18 @@ class GameMainWindow:
         self.root.resizable(False, False)
         self.game_dto: GameBoardDTO = None
 
-        # 难度中文映射
+        # 难度中文与key映射
         self.diff_map = {
             "简易": "easy",
             "普通": "normal",
             "困难": "hard"
         }
-        self.last_selected_diff_key = "normal"
+        self.current_diff_key = None
 
-        # 启动，弹出难度选择窗口
+        # 启动弹出难度选择
         self.show_diff_select_window()
 
     def show_diff_select_window(self):
-        """启动模态难度选择弹窗"""
         diff_win = tk.Toplevel(self.root)
         diff_win.title("选择游戏难度")
         diff_win.geometry("320x160")
@@ -42,7 +41,7 @@ class GameMainWindow:
 
         def confirm_diff():
             selected_cn = diff_var.get()
-            self.last_selected_diff_key = self.diff_map[selected_cn]
+            self.current_diff_key = self.diff_map[selected_cn]
             diff_win.destroy()
             self.init_game_by_diff()
             self.init_game_ui()
@@ -50,31 +49,26 @@ class GameMainWindow:
         tk.Button(diff_win, text="确认开始游戏", command=confirm_diff, font=("Arial",12)).pack(pady=15)
 
     def init_game_by_diff(self):
-        """
-        根据选中难度加载游戏
-        如果存档存在，并且存档的难度 == 当前选择难度：读取存档
-        否则：新建一局，清除旧存档
-        """
-        saved_dto = load_game()
-        if saved_dto is not None and saved_dto.difficulty == self.last_selected_diff_key:
+        """加载当前选中难度的存档，无存档则新建"""
+        saved_dto = load_game(self.current_diff_key)
+        if saved_dto is not None:
             self.game_dto = saved_dto
         else:
-            # 存档不存在 / 存档难度不一致，新开一局
             self.game_dto = GameBoardDTO()
-            self.game_dto.difficulty = self.last_selected_diff_key
+            self.game_dto.difficulty = self.current_diff_key
             Game2048Service.init_new_game(self.game_dto)
             save_game(self.game_dto)
 
     def init_game_ui(self):
         self.root.deiconify()
-        target = DIFFICULTY_CONFIG[self.last_selected_diff_key]["win_target"]
-        self.root.title(f"Python 2048游戏 | 当前难度：{self.last_selected_diff_key} 目标:{target}")
+        target = DIFFICULTY_CONFIG[self.current_diff_key]["win_target"]
+        self.root.title(f"Python 2048游戏 | 当前难度：{self.current_diff_key} 目标:{target}")
         self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT + 40}")
 
         self.info_label = tk.Label(self.root, text=f"分数：{self.game_dto.score}", font=("Arial", 16))
         self.info_label.pack(pady=3)
 
-        # 按钮：重开一局 / 暂停 / 退出游戏（删掉返回难度按钮）
+        # 按钮：重开一局 / 暂停 / 退出游戏
         btn_frame = tk.Frame(self.root)
         btn_frame.pack(pady=2)
 
@@ -90,7 +84,6 @@ class GameMainWindow:
         self.canvas = tk.Canvas(self.root, width=WINDOW_WIDTH, height=WINDOW_HEIGHT - 80, bg="#bbada0")
         self.canvas.pack()
 
-        # 键盘方向键绑定
         self.root.bind("<Left>", self.on_key_press)
         self.root.bind("<Right>", self.on_key_press)
         self.root.bind("<Up>", self.on_key_press)
@@ -121,7 +114,6 @@ class GameMainWindow:
         target = DIFFICULTY_CONFIG[self.game_dto.difficulty]["win_target"]
         self.info_label.config(text=f"分数：{self.game_dto.score}  目标：{target}")
 
-        # 暂停遮罩
         if self.game_dto.is_paused:
             self.canvas.create_rectangle(0,0,WINDOW_WIDTH, WINDOW_HEIGHT, fill="#000000", stipple="gray50")
             self.canvas.create_text(WINDOW_WIDTH//2, (WINDOW_HEIGHT-80)//2, text="游戏已暂停", font=("Arial",30,"bold"), fill="white")
@@ -133,7 +125,6 @@ class GameMainWindow:
             messagebox.showwarning("游戏结束", "棋盘已满，没有可合并方块，游戏结束！")
 
     def toggle_pause(self):
-        """修复暂停功能"""
         self.game_dto.is_paused = not self.game_dto.is_paused
         if self.game_dto.is_paused:
             self.btn_pause.config(text="继续游戏")
@@ -143,20 +134,19 @@ class GameMainWindow:
         self.draw_board()
 
     def restart_game(self):
-        """重开一局，清除存档，沿用当前难度"""
         answer = messagebox.askyesno("确认重开", "确定放弃当前对局，重新开始吗？")
         if answer:
-            clear_save()
+            # 只清空当前难度存档
+            clear_save(self.current_diff_key)
             self.game_dto = GameBoardDTO()
-            self.game_dto.difficulty = self.last_selected_diff_key
+            self.game_dto.difficulty = self.current_diff_key
             Game2048Service.init_new_game(self.game_dto)
             save_game(self.game_dto)
             self.btn_pause.config(text="暂停")
             self.draw_board()
 
     def exit_game(self):
-        """退出前自动保存对局"""
-        answer = messagebox.askyesno("退出确认", "确定要退出游戏吗？当前对局会自动保存。")
+        answer = messagebox.askyesno("退出确认", "确定要退出游戏吗？当前难度对局自动保存。")
         if answer:
             save_game(self.game_dto)
             self.root.destroy()
@@ -173,14 +163,12 @@ class GameMainWindow:
             if not direction:
                 return
 
-            # 暂停 / 胜利 / 游戏结束，禁止移动
             if self.game_dto.is_paused or self.game_dto.is_win or self.game_dto.is_game_over:
                 return
 
             moved = Game2048Service.move(self.game_dto, direction)
             if moved:
                 Game2048Service.add_random_number(self.game_dto)
-                # 移动成功自动保存
                 save_game(self.game_dto)
             Game2048Service.check_game_status(self.game_dto)
             self.draw_board()
